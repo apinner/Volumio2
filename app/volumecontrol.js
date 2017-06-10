@@ -11,6 +11,12 @@ var device = '';
 var mixer = '';
 var maxvolume = '';
 var volumecurve = '';
+var volumesteps = '';
+var currentvolume = '';
+var currentmute = false;
+var premutevolume = '';
+var mixertype = '';
+var devicename = '';
 
 module.exports = CoreVolumeController;
 function CoreVolumeController(commandRouter) {
@@ -23,10 +29,22 @@ function CoreVolumeController(commandRouter) {
 
 
 	device = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getConfigParam', 'outputdevice');
+	if (device === 'softvolume') {
+		device = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getConfigParam', 'softvolumenumber');
+		devicename = 'softvolume';
+	} else {
+		var cards = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getAlsaCards', '');
+		if ((cards[device] != undefined) && (cards[device].name != undefined)) {
+			devicename = cards[device].name;
+		}
+
+	}
 	var mixerdev = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getConfigParam', 'mixer');
 	mixer = '"'+mixerdev+'"';
 	maxvolume = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getConfigParam', 'volumemax');
 	volumecurve = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getConfigParam', 'volumecurvemode');
+	volumesteps = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getConfigParam', 'volumesteps');
+	mixertype = this.commandRouter.executeOnPlugin('audio_interface', 'alsa_controller', 'getConfigParam', 'mixer_type');
 
 
 	var amixer = function (args, cb) {
@@ -102,10 +120,20 @@ function CoreVolumeController(commandRouter) {
 			amixer(['-M', 'set', '-c', device, mixer, val + '%'], function (err) {
 				cb(err);
 			});
+			if (devicename == 'PianoDACPlus'  || devicename == 'Allo Piano 2.1') {
+				amixer(['-M', 'set', '-c', device, 'Subwoofer', val + '%'], function (err) {
+					cb(err);
+				});
+			}
 		} else {
 			amixer(['set', '-c', device, mixer, val + '%'], function (err) {
 				cb(err);
 			});
+			if (devicename == 'PianoDACPlus'  || devicename == 'Allo Piano 2.1') {
+				amixer(['set', '-c', device, 'Subwoofer', val + '%'], function (err) {
+					cb(err);
+				});
+			}
 		}
 	};
 
@@ -131,11 +159,15 @@ CoreVolumeController.prototype.updateVolumeSettings = function (data) {
 	var self = this;
 
 
-	self.logger.info('Updating Volume Controller Parameters: Device: '+ data.device + ' Mixer: '+ data.mixer)
+	self.logger.info('Updating Volume Controller Parameters: Device: '+ data.device + ' Name: '+ data.name +' Mixer: '+ data.mixer + ' Max Vol: ' + data.maxvolume + ' Vol Curve; ' + data.volumecurve + ' Vol Steps: ' + data.volumesteps);
 	device = data.device;
 	mixer = '"'+data.mixer+'"';
 	maxvolume = data.maxvolume;
+	console.log('MAXX'+maxvolume)
 	volumecurve = data.volumecurve;
+	volumesteps = data.volumesteps;
+	mixertype = data.mixertype
+	devicename = data.name;
 }
 
 
@@ -143,49 +175,54 @@ CoreVolumeController.prototype.updateVolumeSettings = function (data) {
 CoreVolumeController.prototype.alsavolume = function (VolumeInteger) {
 	var self = this;
 	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::SetAlsaVolume' + VolumeInteger);
-
 	switch (VolumeInteger) {
 		case 'mute':
 			//Mute or Unmute, depending on state
-			self.getMuted(function (err, mute) {
-				if (mute == false) {
-					self.getVolume(function (err, vol) {
-						self.setMuted(true, function (err) {
-							self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::Muted ');
-							Volume.vol = 0;
-							Volume.mute = true;
-							self.commandRouter.volumioupdatevolume(Volume);
-						});
-					});
-				} else if (mute == true) {
-					self.setMuted(false, function (err) {
-						self.getVolume(function (err, vol) {
-							self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::UnMuted ');
-							Volume.vol = 0;
-							Volume.mute = false;
-							self.commandRouter.volumioupdatevolume(Volume);
-						});
-					});
+			self.getVolume(function (err, vol) {
+				if (vol == null) {
+					vol =  currentvolume
 				}
+				currentmute = true;
+				premutevolume = vol;
+
+				self.setVolume(0, function (err) {
+					Volume.vol = 0
+					Volume.mute = true;
+					self.commandRouter.volumioupdatevolume(Volume);
+				});
 			});
 			break;
 		case 'unmute':
 			//UnMute
-			self.setMuted(false, function (err) {
-				self.getVolume(function (err, vol) {
+					currentmute = false;
+					self.setVolume(premutevolume, function (err) {
+						self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::Volume ' + VolumeInteger);
+						//Log Volume Control
+						Volume.vol = premutevolume;
+						Volume.mute = false;
+						currentvolume = premutevolume;
+						self.commandRouter.volumioupdatevolume(Volume);
 
-					self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::UnMuted ');
-					Volume.vol = VolumeInteger;
-					Volume.mute = false;
-					self.commandRouter.volumioupdatevolume(Volume);
-				});
-			});
+					});
 			break;
 		case '+':
 			//Incrase Volume by one (TEST ONLY FUNCTION - IN PRODUCTION USE A NUMERIC VALUE INSTEAD)
 			self.setMuted(false, function (err) {
 				self.getVolume(function (err, vol) {
-					self.setVolume(vol + 1, function (err) {
+					if (vol == null) {
+						vol =  currentvolume
+					}
+					VolumeInteger = Number(vol)+Number(volumesteps);
+					if (VolumeInteger > 100){
+						VolumeInteger = 100;
+					}
+					if (VolumeInteger > maxvolume){
+						VolumeInteger = maxvolume;
+					}
+					if (mixertype === 'None') {
+						VolumeInteger = 100;
+					}
+					self.setVolume(VolumeInteger, function (err) {
 						Volume.vol = VolumeInteger
 						Volume.mute = false;
 						self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::Volume ' + vol);
@@ -197,8 +234,21 @@ CoreVolumeController.prototype.alsavolume = function (VolumeInteger) {
 			break;
 		case '-':
 			//Decrase Volume by one (TEST ONLY FUNCTION - IN PRODUCTION USE A NUMERIC VALUE INSTEAD)
-			this.getVolume(function (err, vol) {
-				self.setVolume(vol - 1, function (err) {
+			self.getVolume(function (err, vol) {
+				if (vol == null) {
+					vol =  currentvolume
+				}
+				VolumeInteger = Number(vol)-Number(volumesteps);
+				if (VolumeInteger < 0){
+					VolumeInteger = 0;
+				}
+				if (VolumeInteger > maxvolume){
+					VolumeInteger = maxvolume;
+				}
+				if (mixertype === 'None') {
+					VolumeInteger = 100;
+				}
+				self.setVolume(VolumeInteger, function (err) {
 					self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::Volume ' + vol);
 					Volume.vol = VolumeInteger
 					Volume.mute = false;
@@ -208,20 +258,28 @@ CoreVolumeController.prototype.alsavolume = function (VolumeInteger) {
 			break;
 		default:
 			// Set the Volume with numeric value 0-100
+			if (VolumeInteger < 0){
+				VolumeInteger = 0;
+			}
+			if (VolumeInteger > 100){
+				VolumeInteger = 100;
+			}
 			if (VolumeInteger > maxvolume){
 				VolumeInteger = maxvolume;
 			}
-			self.setMuted(false, function (err) {
+			if (mixertype === 'None') {
+				VolumeInteger = 100;
+			}
 				self.setVolume(VolumeInteger, function (err) {
 					self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController::Volume ' + VolumeInteger);
 					//Log Volume Control
 					Volume.vol = VolumeInteger;
 					Volume.mute = false;
+					currentvolume = VolumeInteger;
 					self.commandRouter.volumioupdatevolume(Volume);
-
-				});
 			});
 	}
+
 };
 
 CoreVolumeController.prototype.retrievevolume = function () {
@@ -230,8 +288,18 @@ CoreVolumeController.prototype.retrievevolume = function () {
 		self.getMuted(function (err, mute) {
 			self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'VolumeController:: Volume=' + vol + ' Mute =' + mute);
 			//Log Volume Control
+			 //Log Volume Control
+                        if (vol == null) {
+                        vol = currentvolume,
+                        mute = currentmute
+                        } else {
+                        currentvolume = vol
+                        }
 			Volume.vol = vol;
 			Volume.mute = mute;
+			if (mixertype === 'None') {
+				Volume.vol = 100;
+			}
 			return libQ.resolve(Volume)
 				.then(function (Volume) {
 					self.commandRouter.volumioupdatevolume(Volume);

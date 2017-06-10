@@ -25,10 +25,10 @@ var mountAlbumartFolder= '/data/albumart/folder';
 
 var setFolder = function (newFolder) {
 	//logger.info("Setting folder " + newFolder);
-	albumArtRootFolder = S(newFolder).ensureRight('/').s+'web';
+	albumArtRootFolder = S(newFolder).ensureRight('/').s+'web/';
     fs.ensureDirSync(albumArtRootFolder);
 
-    mountAlbumartFolder= S(newFolder).ensureRight('/').s+'folder';
+    mountAlbumartFolder= S(newFolder).ensureRight('/').s+'folder/';
     fs.ensureDirSync(mountAlbumartFolder);
 };
 
@@ -39,8 +39,8 @@ var searchOnline = function (defer, web) {
 
 	var artist, album, resolution;
 
-	if (web != undefined) {
-		var splitted = nodetools.urlDecode(web).split('/');
+    if (web != undefined) {
+		var splitted = web.split('/');
 
 		if (splitted.length < 3) {
 			defer.reject(new Error('The web link ' + web + ' is malformed'));
@@ -82,15 +82,17 @@ var searchOnline = function (defer, web) {
 	var stats = fs.statSync(infoPath)
 	var fileSizeInBytes = stats["size"]
 
-	if (fileSizeInBytes > 0)
+    if (fileSizeInBytes > 0)
 		infoJson = fs.readJsonSync(infoPath, {throws: false})
 
-	if (infoJson[resolution] == undefined) {
-		albumart(artist, album, resolution, function (err, url) {
+
+    if (infoJson[resolution] == undefined) {
+
+		albumart(nodetools.urlDecode(artist), nodetools.urlDecode(album), nodetools.urlDecode(resolution), function (err, url) {
 			if (err) {
 				albumart(artist, function (err, url) {
 					if (err) {
-						console.log("ERRORE: " + err);
+						console.log("ERROR getting albumart: " + err + " for Infopath '" + infoPath + "'");
 						defer.reject(new Error(err));
 						return defer.promise;
 					}
@@ -158,7 +160,7 @@ var searchInFolder = function (defer, path, web) {
 	var coverFolder = '';
 	var splitted = path.split('/');
 
-	for (var k = 0; k < splitted.length - 1; k++) {
+	for (var k = 1; k < splitted.length; k++) {
 		coverFolder = coverFolder + '/' + splitted[k];
 	}
 
@@ -229,14 +231,27 @@ var processRequest = function (web, path) {
 	var defer = Q.defer();
 
 	if (web == undefined && path == undefined) {
+	    logger.info('No input data');
 		defer.reject(new Error(''));
 		return defer.promise;
 	}
 
 	if (path != undefined) {
-        path = '/mnt/' + path;
-		logger.info(path);
-		if (fs.existsSync(path)) {
+        path=nodetools.urlDecode(path);
+
+        path=sanitizeUri(path);
+
+        if(path.startsWith('/')){
+        	if (path.startsWith('/tmp/')){
+
+			} else {
+				path = '/mnt' + path;
+			}
+		} else {
+			path = '/mnt/' + path;
+		}
+
+        if (fs.existsSync(path)) {
             var stats = fs.statSync(path);
             var isFolder=false;
             var imageSize='extralarge';
@@ -308,6 +323,10 @@ var processRequest = function (web, path) {
 		}
 
 	}
+    else
+    {
+        searchOnline(defer,web);
+    }
 	return defer.promise;
 };
 
@@ -322,8 +341,27 @@ var processRequest = function (web, path) {
  *    To achieve this assign this function to a path like /:artist/:album/:resolution
  **/
 var processExpressRequest = function (req, res) {
+    var rawQuery=req._parsedUrl.query;
+
 	var web = req.query.web;
 	var path = req.query.path;
+    var icon = req.query.icon;
+
+    if(rawQuery !== undefined && rawQuery !== null)
+    {
+        var splitted=rawQuery.split('&');
+        for(var i in splitted)
+        {
+            var itemSplitted=splitted[i].split('=');
+            if(itemSplitted[0]==='web')
+                web=itemSplitted[1];
+            else if(itemSplitted[0]==='path')
+                path=itemSplitted[1];
+            else if(itemSplitted[0]==='icon')
+                icon=itemSplitted[1];
+        }
+    }
+
 
     var starttime=Date.now();
 	var promise = processRequest(web, path);
@@ -332,12 +370,25 @@ var processExpressRequest = function (req, res) {
 
             var stoptime=Date.now();
             logger.info('Serving request took '+(stoptime-starttime)+' milliseconds');
+		    res.setHeader('Cache-Control', 'public, max-age=2628000')
 			res.sendFile(filePath);
 		})
 		.fail(function () {
-			res.sendFile(__dirname + '/default.png');
+		    if(icon!==undefined){
+
+
+				res.setHeader('Cache-Control', 'public, max-age=2628000')
+                res.sendFile(__dirname + '/icons/'+icon+'.jpg');
+			} else {
+			    res.setHeader('Cache-Control', 'public, max-age=2628000')
+			    res.sendFile(__dirname + '/default.png');
+			}
 		});
 };
+
+var sanitizeUri = function (uri) {
+    return uri.replace('music-library/', '').replace('mnt/', '');
+}
 
 
 module.exports.processExpressRequest = processExpressRequest;

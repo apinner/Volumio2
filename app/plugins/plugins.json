@@ -10,16 +10,6 @@
         "value": "STARTED"
       }
     },
-    "spop": {
-      "enabled": {
-        "type": "boolean",
-        "value": true
-      },
-      "status": {
-        "type": "string",
-        "value": "STARTED"
-      }
-    },
     "mpd": {
       "enabled": {
         "type": "boolean",
@@ -30,7 +20,7 @@
         "value": "STARTED"
       }
     },
-    "dirble": {
+    "webradio": {
       "enabled": {
         "type": "boolean",
         "value": true
@@ -48,6 +38,16 @@
       "status": {
         "type": "string",
         "value": "STOPPED"
+      }
+    },
+    "last_100": {
+      "enabled": {
+        "type": "boolean",
+        "value": true
+      },
+      "status": {
+        "type": "string",
+        "value": "STARTED"
       }
     }
   },
@@ -93,6 +93,16 @@
         "type": "string",
         "value": "STARTED"
       }
+    },
+    "appearance": {
+      "enabled": {
+        "type": "boolean",
+        "value": true
+      },
+      "status": {
+        "type": "string",
+        "value": "STARTED"
+      }
     }
   },
   "user_interface": {
@@ -110,6 +120,16 @@
       "enabled": {
         "type": "boolean",
         "value": false
+      },
+      "status": {
+        "type": "string",
+        "value": "STARTED"
+      }
+    },
+    "rest_api": {
+      "enabled": {
+        "type": "boolean",
+        "value": true
       },
       "status": {
         "type": "string",
@@ -174,6 +194,26 @@
         "value": "STARTED"
       }
     },"volumiodiscovery": {
+      "enabled": {
+        "type": "boolean",
+        "value": true
+      },
+      "status": {
+        "type": "string",
+        "value": "STARTED"
+      }
+    },
+    "volumio_command_line_client": {
+      "enabled": {
+        "type": "boolean",
+        "value": true
+      },
+      "status": {
+        "type": "string",
+        "value": "STARTED"
+      }
+    },
+    "my_volumio":  {
       "enabled": {
         "type": "boolean",
         "value": true
